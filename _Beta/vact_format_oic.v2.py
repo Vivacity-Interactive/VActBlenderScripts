@@ -241,6 +241,8 @@ class VActIdol:
         self.eval_geom = None
         self.b_cloud = False
         self.b_ignore = False
+        self.cloud = None
+        self.refs = None
                 
 
 class VActOIC:
@@ -481,6 +483,7 @@ class VActFormatOIC:
                 export_animations=settings.use_export_animation,
                 export_yup= settings._up in {'Y'},
                 export_apply=True)
+        # TODO maybe alambic supoort
             
     def resolve_link(self, context, cursor, settings): 
         ext = ".bin"
@@ -508,51 +511,57 @@ class VActFormatOIC:
             meta.add_entry(meta_entry)
         return meta if meta.has() else None
     
-    def from_geometryset(self, context, references, name, depsgraph, oic, cursor, settings):
+    def from_geometryset(self, context, references, name, parent, id, depsgraph, oic, cursor, settings):
         _indicie = context.attributes[".reference_index"]
         _transforms = context.attributes["instance_transform"]
         _object = None
         _dumy = _VActDummyInstance()
+        _base = parent.matrix_world if parent else mathutils.Matrix.Identity(4)
         for _index in range(len(context.points)):
-            index = _indicie.data[_index].value 
-            _matrix = _dumy.matrix_world = _transforms.data[_index].value
+            index = _indicie.data[_index].value
+            _matrix = _dumy.matrix_world = (_base @ _transforms.data[_index].value)
             reference = references[index]
             if isinstance(reference, bpy.types.GeometrySet):
-                # may need to evaluate from sub object as well
-                print((reference.name, reference.mesh))
-                _mesh = None
                 _object = bpy.data.objects.get(reference.name)
-                # note might cause problem if not a mesh
-                if _object: _mesh = _object.data
-                else: _mesh = bpy.data.meshes.get(reference.mesh.name) if reference.mesh else None
-                if not _mesh:
-                    _idol = cursor.idols.get(reference.name)
-                    #_object = idol.object
-                    _mesh = _idol.object.data if _idol else None
-                    if not _mesh:
-                        print(f"WARNING: Geometry nodes none referencing meshes still unspported/untested '{reference.name}:{reference.mesh.name}'.")
-                        _mesh = reference.mesh.to_mesh().copy()
-                        _mesh = reference.name or f"{name}_{_index}"
-                bNewObject = not _object and _mesh
-                if bNewObject: _object = bpy.data.objects.new(_mesh.name, _mesh)
-                _dumy.object = _object
-                idol = self.resolve_idol(_object, True, depsgraph, oic, cursor, settings, False)
-                #print(('-geomi', 'geometryset', reference.name, reference.mesh.name, reference.instance_references()))
-                self.from_idol(_dumy, idol, True, oic, cursor, settings)
+                if _object:
+                    #print(("-geomi", "geometryset", "object", reference.name, _object.name, _object.data.name))
+                    idol = self.resolve_idol(_object, True, depsgraph, oic, cursor, settings, False)
+                    _dumy.object = _object
+                    _id = self.from_idol(_dumy, idol, True, id, oic, cursor, settings)
+                    if idol.b_cloud: self.from_geometryset(idol.cloud, idol.refs, idol.name, _dumy, _id, depsgraph, oic, cursor, settings)
+                
+                _mesh = bpy.data.meshes.get(reference.mesh.name) if reference.mesh else None
+                # TODO find out what to do when mesh is generated needs
+                # b_generated = not _mesh and reference.mesh
+                # if b_generated:
+                #     _mesh = reference.mesh.to_mesh().copy()
+                #     _mesh = reference.name or f"{name}_{_index}"
+                
+                if _mesh:
+                    _object = bpy.data.objects.new(_mesh.name, _mesh)
+                    #print(("-geomi", "geometryset", "mesh", reference.name, _object.name, _object.data.name))
+                    idol = self.resolve_idol(_object, True, depsgraph, oic, cursor, settings, False)
+                    _dumy.object = _object
+                    _id = self.from_idol(_dumy, idol, True, id, oic, cursor, settings)
+                    if idol.b_cloud: self.from_geometryset(idol.cloud, idol.refs, idol.name, _dumy, _id, depsgraph, oic, cursor, settings)
+                    bpy.data.objects.remove(_object)
             elif isinstance(reference, bpy.types.Object):
-                _dumy.object = reference
-                idol = self.resolve_idol(reference, True, depsgraph, oic, cursor, settings, False)
-                #print(('-geomi', 'object', reference.name, reference.data.name))
-                self.from_idol(_dumy, idol, True, oic, cursor, settings)
+                _object = bpy.data.objects.get(reference.name)
+                if _object:
+                    _dumy.object = _object
+                    #print(('-geomi', 'object', reference.name, _object.name, _object.data.name))
+                    idol = self.resolve_idol(_object, True, depsgraph, oic, cursor, settings, False)
+                    _id = self.from_idol(_dumy, idol, True, id, oic, cursor, settings)
+                    if idol.b_cloud: self.from_geometryset(idol.cloud, idol.refs, idol.name, _dumy, _id, depsgraph, oic, cursor, settings)
             elif isinstance(reference, bpy.types.Collection):
-                #print(('-geomi', 'collection', reference.name, reference.name))
+                #print(('-geomi', 'collection', reference.name))
                 for child in reference.all_objects:
-                    _dumy.matrix_world = child.matrix_world #_matrix @ child.matrix_world #
+                    _dumy.matrix_world = _matrix @ child.matrix_world
                     _dumy.object = child
+                    #print(("-geomi", 'collection', "child", reference.name, reference.data.name))
                     idol = self.resolve_idol(child, True, depsgraph, oic, cursor, settings, False)
-                    #print(('-geomi', 'object(child)', reference.name, reference.data.name))
-                    self.from_idol(_dumy, idol, True, oic, cursor, settings)
-        if _object: bpy.data.objects.remove(_object)
+                    _id = self.from_idol(_dumy, idol, True, id, oic, cursor, settings)
+                    if idol.b_cloud: self.from_geometryset(idol.cloud, idol.refs, idol.name, _dumy, _id, depsgraph, oic, cursor, settings)
     
 
     def resolve_idol(self, context, b_particle, depsgraph, oic, cursor, settings, b_add = False):
@@ -584,10 +593,10 @@ class VActFormatOIC:
             if idol.eval_obj is not context: idol.eval_geom = idol.eval_obj.evaluated_geometry()
             
             if idol.eval_geom:
-                _cloud = idol.eval_geom.instances_pointcloud()
-                _refs = idol.eval_geom.instance_references()
-                idol.b_cloud = _cloud and _refs
-                if idol.b_cloud: self.from_geometryset(_cloud, _refs, idol.name, depsgraph, oic, cursor, settings)                  
+                idol.cloud = idol.eval_geom.instances_pointcloud()
+                idol.refs = idol.eval_geom.instance_references()
+                idol.b_cloud = idol.cloud and idol.refs
+                #if idol.b_cloud: self.from_geometryset(context, idol.cloud, idol.refs, idol.name, _dumy, -1, depsgraph, oic, cursor, settings)                  
 
             _meta = self.resolve_meta(idol.object.data, cursor, settings)
             if (_meta): idol.oic.meta = oic.add_meta(_meta)
@@ -649,7 +658,8 @@ class VActFormatOIC:
                 if b_ignore: continue
                 _dumy.object = object
                 _dumy.matrix_world = object.matrix_world
-                self.from_idol(_dumy, idol, b_particle, oic, cursor, settings)
+                _id = self.from_idol(_dumy, idol, b_particle, -1, oic, cursor, settings)
+                if idol.b_cloud: self.from_geometryset(idol.cloud, idol.refs, idol.name, _dumy, _id, depsgraph, oic, cursor, settings)
         else:
             for instance in depsgraph.object_instances:
                 _object = instance.instance_object or instance.object
@@ -665,15 +675,19 @@ class VActFormatOIC:
                 idol = self.resolve_idol(_object.original, b_particle, depsgraph, oic, cursor, settings)
                 b_ignore = (((not instance.particle_system) and idol.b_cloud and instance.is_instance) or idol.b_ignore)
                 if b_ignore: continue
-                self.from_idol(instance, idol, b_particle, oic, cursor, settings)
+                # TODO resolve parent id in desgraph context
+                _id = self.from_idol(instance, idol, b_particle, -1, oic, cursor, settings)
+                if idol.b_cloud: self.from_geometryset(idol.cloud, idol.refs, idol.name, instance, _id, depsgraph, oic, cursor, settings)
         
-    def from_idol(self, context, idol, b_particle, oic, cursor, settings):        
+    def from_idol(self, context, idol, b_particle, parent, oic, cursor, settings):        
         _instance = VActOIC.Instance()
+        _instance.parent = parent
         _instance.object = idol.oic.id
         _instance.transform = self._to_transform(context, cursor, settings)
         _meta = self.resolve_meta(context.object, cursor, settings) if b_particle else None
         if (_meta): _instance.meta = oic.add_meta(_meta)
         oic.add_instance(_instance)
+        return _instance.id
     
     def from_root(self, context, oic, cursor, settings):
         oic.axis = settings.vact_axis
