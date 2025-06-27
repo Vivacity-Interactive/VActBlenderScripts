@@ -33,8 +33,8 @@ class _Settings:
         self.b_delete_original = True
         self.b_hide_original = True
         self.refs_into = "_References"
-        self.name_gx_single = "GX_Instance"
-        self.name_gx_grouped = "GX_Instances"
+        self.name_gx_single = "GNX_Instance"
+        self.name_gx_grouped = "GNX_Instances"
         self.points_reprefix = ("SM_", "GX_")
         self.name_rotation = "_rotation"
         self.name_scale = "_scale"
