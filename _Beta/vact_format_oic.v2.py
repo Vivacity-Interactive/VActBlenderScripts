@@ -57,7 +57,7 @@ class VActExportEntry:
         return self.dir + self.tmpl.replace('$1', name).replace('$2', module).replace('$3', dir)
 
 class VActExportRule:
-    def __init__(self, axis, identity, rvalid, rclean, rfix, map, mdefault, stmpl, lut = {}):
+    def __init__(self, axis, identity, rvalid, rclean, rfix, map, mdefault, stmpl, genx, lut = {}):
         self.lut = lut or {}
         self.rvalid = rvalid if isinstance(rvalid, typing.Pattern) else re.compile(rvalid)
         self.rclean = rclean if isinstance(rclean, typing.Pattern) else re.compile(rclean)
@@ -67,6 +67,7 @@ class VActExportRule:
         self.prefix = identity
         self.mdefault = mdefault if isinstance(mdefault, VActExportEntry) else VActExportEntry()
         self.stmpl = stmpl
+        self.genx = genx
     
     def convert(self, decomp, b_other = False):
         if b_other: return decomp[0] + decomp[1].upper() + decomp[2].upper() + decomp[3].upper() + decomp[4].title() + decomp[7].upper() + decomp[9]
@@ -85,7 +86,7 @@ class VActExportRule:
         _name = None
         if _match:
             #_SOCKET_UCX_SM_MYNIC_2_7XL_EOBJECT_223_LOD2_12
-            #(_, SOCKET_, UCX_, SM_, MYNIC_2_7XL_EOBJECT_223, _223, 223, _LOD2, 2, _12, 12)
+            #(_, SOCKET_, UCX_, SM_, (MYNIC_2_7XL_EOBJECT_223, _223, 223), (_LOD2, 2), (_12, 12))
             #(1, 2, 3, 4, (5, 6, 7), (8, 9), (10, 11))
             _decomp = (
                 (_match.group(1) or ""),
@@ -113,6 +114,7 @@ class VActExportRule:
         entry = None
         name, decomp = self.pretty(name, b_lut)
         if name:
+            print(decomp[3])
             entry = self.map.get(decomp[3], self.mdefault)
             _type = 'Particle' if b_particle else entry.type
             if entry: _asset = entry.path(name, module, dir)
@@ -132,7 +134,7 @@ class _VActERUE(VActExportRule):
                 'BP_': VActExportEntry("Actor", "/Game/Blueprints/", "$3$1.$1"),
                 'HINT_': VActExportEntry("Actor", "/Script/", "$2.$1"),
                 'E_': VActExportEntry("Actor", "/Script/", "$2.$1"),
-                'SKEL_': VActExportEntry("Mesh", "/Game/Models/Actors/", "$1_Skeleton.$1_Skeleton"),
+                'SKEL_': VActExportEntry("Mesh", "/Game/Models/Actors/", "$1_Skeleton.$1_Skeleton"), # assuming a skeletal mesh is also a mesh
                 'SK_': VActExportEntry("Mesh", "/Game/Models/Actors/", "$1.$1"),
                 'RIG_': VActExportEntry("Mesh", "/Game/Models/Actors/", "$1.$1"),
                 'MUSIC_': VActExportEntry("Audio", "/Game/Audio/Music/", "$1.$1"),
@@ -163,6 +165,7 @@ class _VActERUE(VActExportRule):
             },
             VActExportEntry("Mesh", "/Game/Models/", "$1.$1"),
             "/Script/$2.$1",
+            {"GX_"},
             lut
         )
 
@@ -172,6 +175,9 @@ def _vact_resolve_hlpr(axis, lut = {}):
     #elif axis in {'Unity'}: return _VActERUnity(lut)
     #elif axis in {'Blender'}: return _VActERBlender(lut)
     return _VActERUE(lut)
+
+def _vact_hash(obj, flag, szf=1):
+    return (id(obj) << szf) | int(flag)
 
 class VActList(list):
     def __next__(self):
@@ -241,6 +247,7 @@ class VActIdol:
         self.eval_geom = None
         self.b_cloud = False
         self.b_ignore = False
+        self.b_jump = False
         self.cloud = None
         self.refs = None
                 
@@ -565,12 +572,14 @@ class VActFormatOIC:
     
 
     def resolve_idol(self, context, b_particle, depsgraph, oic, cursor, settings, b_add = False):
+        # self.resolve_idol(_asset, False, oic, cursor, settings, True)
         #TODO problem if context.data is for some a particle and others a mesh
-        idol = cursor.idols.get(context.data)
+        #TODO empties or other none data objects not yet supported
+        _b_particle = b_particle and not settings.use_mesh_assets
+        idol = cursor.idols.get(_vact_hash(context.data, _b_particle))
         if not idol:
             name = context.data.name
             _object = context
-            _b_particle = b_particle and not settings.use_mesh_assets
             if not b_add:
                 _object = context.copy()
                 _object.data = context.data
@@ -579,7 +588,7 @@ class VActFormatOIC:
                 _object.parent = None
                 _object.matrix_world = mathutils.Matrix.Identity(4)
                 cursor.into_assets.objects.link(_object)
-
+            
             idol = VActIdol()
             idol.asset, idol.type, idol.name, idol.entry, idol.decomp = cursor.hlpr.asset(name, _b_particle, settings.module_name, settings.asset_path)
             idol.name = name = idol.name or name
@@ -593,6 +602,8 @@ class VActFormatOIC:
             if idol.eval_obj is not context: idol.eval_geom = idol.eval_obj.evaluated_geometry()
             
             if idol.eval_geom:
+                # maybe move up, need to be referenced in RulesSet
+                idol.b_jump = context.name.startswith('GX_')#idol.decomp[3] in {'GX_'}
                 idol.cloud = idol.eval_geom.instances_pointcloud()
                 idol.refs = idol.eval_geom.instance_references()
                 idol.b_cloud = idol.cloud and idol.refs
@@ -601,11 +612,11 @@ class VActFormatOIC:
             _meta = self.resolve_meta(idol.object.data, cursor, settings)
             if (_meta): idol.oic.meta = oic.add_meta(_meta)
 
-            idol.b_ignore = settings.use_ignore_invalid and not idol.asset
+            idol.b_ignore = (settings.use_ignore_invalid and not idol.asset)
             if (not idol.b_ignore): oic.add_object(idol.oic)
             else: print(('-ignore','idol.name',idol.name))
             
-            cursor.idols[_object.data] = idol
+            cursor.idols[_vact_hash(_object.data, _b_particle)] = idol
             cursor.exclude.add(_object)
         return idol
     
@@ -685,8 +696,9 @@ class VActFormatOIC:
         _instance.object = idol.oic.id
         _instance.transform = self._to_transform(context, cursor, settings)
         _meta = self.resolve_meta(context.object, cursor, settings) if b_particle else None
-        if (_meta): _instance.meta = oic.add_meta(_meta)
-        oic.add_instance(_instance)
+        if not idol.b_jump:
+            if (_meta): _instance.meta = oic.add_meta(_meta)
+            oic.add_instance(_instance)
         return _instance.id
     
     def from_root(self, context, oic, cursor, settings):
@@ -694,7 +706,7 @@ class VActFormatOIC:
         if settings.use_clear_assets:
             for _asset in cursor.into_assets.objects: bpy.data.objects.remove(_asset)
         else:
-            for _asset in cursor.into_assets.objects: self.resolve_idol(_asset, False, oic, cursor, settings, True)
+            for _asset in cursor.into_assets.objects: self.resolve_idol(_asset, False, None, oic, cursor, settings, True)
         self.from_depsgraph(context, oic, cursor, settings)
         return oic
     
@@ -780,7 +792,8 @@ class VActFormatOIC:
         if settings.use_export_objects:
             bpy.ops.object.select_all(action='DESELECT')
             for idol in cursor.idols.values():
-                if idol.type in {'Mesh'}: self.to_link(idol, cursor, settings)
+                # TODO if there is a particle and mesh of the same object, a double export may happen
+                if idol.type in {'Mesh', 'Particle'}: self.to_link(idol, cursor, settings)
 
         print([('len(oic.objects)',len(oic.objects)),('len(oic.instances)',len(oic.instances)),('len(oic.metas)',len(oic.metas))])
         
