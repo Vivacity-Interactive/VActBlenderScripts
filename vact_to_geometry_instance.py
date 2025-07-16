@@ -6,14 +6,13 @@ def _resolve_collection(object, default):
     return default
 
 class _VActInstancesEntry:
-    def __init__(self, name, instance = None, into = None):
+    def __init__(self, name, instance = None):
         data = bpy.data.meshes.new(name)
         self.instance = instance
         self.object = bpy.data.objects.new(name, data)
         self.rotations = None
         self.scales = None
         self.objects = []
-        self.into = into
 
     def evaluate(self, name_rotation= "rotation", name_scale = "scale"):
         data = self.object.data
@@ -28,7 +27,7 @@ class _Settings:
         self.into = "_Instances"
         self.b_ensure_instance = True
         self.b_instance_grouped = True
-        self.b_into_same_collection = True
+        self.b_into_same_collection = False
         self.b_clear_animation_data = False
         self.b_delete_original = True
         self.b_hide_original = True
@@ -42,7 +41,7 @@ class _Settings:
 class VActToGeometryInstance:
     def as_instances(self, context, into, settings):
         _into = into
-        _refs_into = bpy.data.collections[settings.into] if settings.refs_into else into
+        _refs_into = bpy.data.collections[settings.refs_into] if settings.refs_into else into
         _groups = {}
         for object in context:
             _id = id(object.data)
@@ -59,7 +58,7 @@ class VActToGeometryInstance:
                     _instance.matrix_world = mathutils.Matrix.Identity(4)
                     if settings.b_clear_animation_data: _instance.animation_data_clear()
                     _refs_into.objects.link(_instance)
-                _entry = _VActInstancesEntry(name, _instance, _into)
+                _entry = _VActInstancesEntry(name, _instance)
                 print(object.data.name)
                 _groups[_id] = _entry
             _entry.objects.append(object)

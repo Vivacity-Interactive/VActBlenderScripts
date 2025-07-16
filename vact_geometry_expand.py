@@ -68,6 +68,7 @@ class VActGeometryExpand:
                     # TODO check if instance position is tranfered properly
                     self.do_expand(_object, _parent, depsgraph, max_depth - 1, into, settings)
                 else:
+                    # TODO fix test if context.data equals _mesh if not than fine otherwise skip
                     _mesh = bpy.data.meshes.get(reference.mesh.name) if reference.mesh else None
                     
                     # TODO find out what to do when mesh is generated needs
