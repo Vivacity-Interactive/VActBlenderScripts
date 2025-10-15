@@ -24,7 +24,9 @@ _mdvisual = {
     "assert_deps" : [
         "MDAnalysis",
         "numpy"
-    ]
+    ],
+    "pkg_dir": "python_lib",
+    "python_lib": None
 }
 
 import bpy, sys, math, mathutils, bmesh
@@ -863,11 +865,20 @@ def _mdvisual_setup():
         import subprocess
         
         # Find python executable
-        python_exe = os.path.join(sys.prefix, 'bin', 'python.exe')
+        python_exe = sys.executable #os.path.join(sys.prefix, 'bin', 'python.exe')
+        
+        # Ensure user library path
+        pkg_dir = _mdvisual["python_lib"]
+        if (not pkg_dir) and _mdvisual["pkg_dir"]:
+            plugin_dir = os.path.dirname(bpy.data.filepath) or os.getcwd()
+            pkg_dir = _mdvisual["python_lib"] = os.path.join(plugin_dir, _mdvisual["pkg_dir"])
+            os.makedirs(pkg_dir, exist_ok=True)
+            if pkg_dir and pkg_dir not in sys.path: sys.path.insert(0, pkg_dir)
         
         _mdvisual["trace"] += [subprocess.run([python_exe, "-m", "ensurepip"])]
-        for dep in _mdvisual["deps"]:
-            _mdvisual["trace"] += [subprocess.run([python_exe, "-m", "pip", "install", "--upgrade", dep])]
+        for dep in _mdvisual["deps"]:#
+            if pkg_dir: _mdvisual["trace"] += [subprocess.run([python_exe, "-m", "pip", "install", "--upgrade", "--target", pkg_dir, dep])]
+            else: _mdvisual["trace"] += [subprocess.run([python_exe, "-m", "pip", "install", "--upgrade", dep])]
         
         try:
             # Check for incomplete dependencies

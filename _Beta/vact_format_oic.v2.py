@@ -114,7 +114,7 @@ class VActExportRule:
         entry = None
         name, decomp = self.pretty(name, b_lut)
         if name:
-            print(decomp[3])
+            #print(decomp[3])
             entry = self.map.get(decomp[3], self.mdefault)
             _type = 'Particle' if b_particle else entry.type
             if entry: _asset = entry.path(name, module, dir)
@@ -161,9 +161,9 @@ class _VActERUE(VActExportRule):
                 'OIC_': VActExportEntry("Data", "/Game/Blueprints/OICProfiles/", "$1.$1"),
                 'PGX_': VActExportEntry("Data", "/Game/Blueprints/PGXProfiles/", "$1.$1"),
                 'WDS_': VActExportEntry("Actor", "/Script/", "Engine.WindDirectionalSource"),
-                'PPV_': VActExportEntry("Actor", "/Script/", "Engine.PostProcessVolume"),
+                'PPV_': VActExportEntry("Actor", "/Script/", "Engine.PostProcessVolume")
             },
-            VActExportEntry("Mesh", "/Game/Models/", "$1.$1"),
+            VActExportEntry("Mesh", "/Game/", "$1.$1"),
             "/Script/$2.$1",
             {"GX_"},
             lut
@@ -507,7 +507,7 @@ class VActFormatOIC:
             if not entry.vact_enabled: continue
             meta_entry = VActOIC.MetaEntry()
             meta_entry.asset = cursor.hlpr.script(entry.vact_asset, settings.module_name)
-            print(('-enabled','meta_entry.asset',meta_entry.asset, context.name))
+            #print(('-enabled','meta_entry.asset',meta_entry.asset, context.name))
             for property in entry.vact_properties:
                 if not property.vact_enabled: continue
                 _property = VActOIC.Property()
@@ -613,7 +613,8 @@ class VActFormatOIC:
             if (_meta): idol.oic.meta = oic.add_meta(_meta)
 
             idol.b_ignore = (settings.use_ignore_invalid and not idol.asset)
-            if (not idol.b_ignore): oic.add_object(idol.oic)
+            b_add = (not idol.b_jump) and (not idol.b_ignore)
+            if (b_add): oic.add_object(idol.oic)
             else: print(('-ignore','idol.name',idol.name))
             
             cursor.idols[_vact_hash(_object.data, _b_particle)] = idol
@@ -642,6 +643,7 @@ class VActFormatOIC:
             
     def to_link(self, context, cursor, settings):
         base_directory = os.path.dirname(bpy.data.filepath)
+        print(("file", base_directory))
         link = self.resolve_link(context, cursor, settings)
         _directory = os.path.dirname(os.path.relpath(link.file))
         _filepath = os.path.join(base_directory,_directory, link.file) 
@@ -652,6 +654,7 @@ class VActFormatOIC:
         
         context.object.select_set(True)
         b_valid = _filepath and base_directory
+
         if b_valid:
             self._export_as(_filepath, base_directory, settings)
         context.object.select_set(False)
@@ -793,7 +796,9 @@ class VActFormatOIC:
             bpy.ops.object.select_all(action='DESELECT')
             for idol in cursor.idols.values():
                 # TODO if there is a particle and mesh of the same object, a double export may happen
-                if idol.type in {'Mesh', 'Particle'}: self.to_link(idol, cursor, settings)
+                #print(("-idol",idol.name, idol.b_jump, idol.type))
+                b_export = (not idol.b_jump) and idol.type in {'Mesh', 'Particle'}
+                if b_export: self.to_link(idol, cursor, settings)
 
         print([('len(oic.objects)',len(oic.objects)),('len(oic.instances)',len(oic.instances)),('len(oic.metas)',len(oic.metas))])
         
@@ -934,7 +939,7 @@ class VActProperty(PropertyGroup):
     vact_ctx : StringProperty(name="Context", default= "", options={'HIDDEN', 'LIBRARY_EDITABLE'}, get=get_ctx)
     
     vact_icon : StringProperty(name="Icon", default= "QUESTION", options={'HIDDEN', 'LIBRARY_EDITABLE'})
-    vact_type : StringProperty(name="Type", default= "", options={'HIDDEN', 'LIBRARY_EDITABLE'}, maxlen=1)
+    vact_type : StringProperty(name="Type", default= "", options={'HIDDEN', 'LIBRARY_EDITABLE'})
     vact_name : StringProperty(name="Name", default="_Nameless", options={'LIBRARY_EDITABLE'})
     vact_enabled : BoolProperty(name="Enabled", default=True, options={'LIBRARY_EDITABLE'})
 

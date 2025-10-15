@@ -19,10 +19,10 @@ class _Settings:
         self.b_remove = False
         self.b_expand_filter = True
         self.node_groups_remove = {'GN_Single'}
-        self.node_groups_expand = {'GN_Array', 'GN_Mirror', 'GN_Path', 'GN_Curve'}
+        self.node_groups_expand = {'GN_Array', 'GN_Mirror', 'GN_Path'}
         self.b_expand = True
         self.b_delete_original = False #True
-        self.expand_into = "__Expand__" #"_Colony_87T_Appartment"#"_Expanded" #"_Colony_87T_Half_Tunnel"
+        self.expand_into = "_Colony_87T_Far_02" #"_Colony_87T_Appartment"#"_Expanded" #"_Colony_87T_Half_Tunnel"
         self.max_depth = -1
         self.b_clear_modifiers = True
         self.b_clear_animation_data = False
@@ -48,7 +48,7 @@ class VActGeometryExpand:
         
     def do_collection(self, context, matrix_world, depsgraph, parent, depth, into, settings):
         #print(('-geomi', 'collection', context.name))
-        for _ref_object in tuple(context.all_objects):
+        for _ref_object in context.all_objects:
             _object = bpy.data.objects.get(_ref_object.name) if _ref_object else None
             if _object:
                 _matrix_world = matrix_world @ _object.matrix_world
@@ -81,8 +81,7 @@ class VActGeometryExpand:
             reference = references[index]
             if isinstance(reference, bpy.types.GeometrySet):
                 _collection = bpy.data.collections.get(reference.name)
-                if _collection:
-                    self.do_collection(_collection, _matrix_world, depsgraph, None, max_depth, into, settings)
+                if _collection: self.do_collection(_collection, _matrix_world, depsgraph, None, max_depth, into, settings)
                 else:
                     _object = bpy.data.objects.get(reference.name)
                     if _object:

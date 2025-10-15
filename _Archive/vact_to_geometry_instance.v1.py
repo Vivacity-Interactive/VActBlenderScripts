@@ -27,11 +27,10 @@ class _Settings:
         self.into = "_Instances"
         self.b_ensure_instance = True
         self.b_instance_grouped = True
-        self.b_into_same_collection = True
+        self.b_into_same_collection = False
         self.b_clear_animation_data = False
         self.b_delete_original = True
         self.b_hide_original = True
-        self.min_count = 1
         self.refs_into = "_References"
         self.name_gx_single = "GNX_Instance"
         self.name_gx_grouped = "GNX_Instances"
@@ -65,59 +64,57 @@ class VActToGeometryInstance:
             _entry.objects.append(object)
         
         for _entry in _groups.values():
-            b_toinstance = len(_entry.objects) >= settings.min_count
-            if b_toinstance:
-                _entry.evaluate(settings.name_rotation, settings.name_scale)
-                for i, vertex in enumerate(_entry.object.data.vertices):
-                    object = _entry.objects[i]
-                    vertex.co = object.location
-                    _entry.rotations.data[i].vector = object.rotation_euler
-                    _entry.scales.data[i].vector = object.scale
-                    if settings.b_delete_original: bpy.data.objects.remove(object)
-                    elif settings.b_hide_original: object.hide_render = object.hide_viewport = True
+            _entry.evaluate(settings.name_rotation, settings.name_scale)
+            for i, vertex in enumerate(_entry.object.data.vertices):
+                object = _entry.objects[i]
+                vertex.co = object.location
+                _entry.rotations.data[i].vector = object.rotation_euler
+                _entry.scales.data[i].vector = object.scale
+                if settings.b_delete_original: bpy.data.objects.remove(object)
+                elif settings.b_hide_original: object.hide_render = object.hide_viewport = True
+            
+            node_group = bpy.data.node_groups.get(settings.name_gx_grouped)
+            if not node_group:
+                node_group = bpy.data.node_groups.new(settings.name_gx_grouped, 'GeometryNodeTree')
+                node_group.interface.new_socket(in_out='OUTPUT', socket_type="NodeSocketGeometry", name="Geometry")
+                node_group.interface.new_socket(in_out='INPUT', socket_type="NodeSocketGeometry", name="Geometry")
+                node_group.interface.new_socket(in_out='INPUT', socket_type="NodeSocketObject", name="Object")
                 
-                node_group = bpy.data.node_groups.get(settings.name_gx_grouped)
-                if not node_group:
-                    node_group = bpy.data.node_groups.new(settings.name_gx_grouped, 'GeometryNodeTree')
-                    node_group.interface.new_socket(in_out='OUTPUT', socket_type="NodeSocketGeometry", name="Geometry")
-                    node_group.interface.new_socket(in_out='INPUT', socket_type="NodeSocketGeometry", name="Geometry")
-                    node_group.interface.new_socket(in_out='INPUT', socket_type="NodeSocketObject", name="Object")
-                    
-                    nodes = node_group.nodes
-                    links = node_group.links
+                nodes = node_group.nodes
+                links = node_group.links
 
-                    group_in = nodes.new(type='NodeGroupInput')
-                    group_out = nodes.new(type='NodeGroupOutput')
+                group_in = nodes.new(type='NodeGroupInput')
+                group_out = nodes.new(type='NodeGroupOutput')
 
-                    gnx_inst_on = nodes.new(type="GeometryNodeInstanceOnPoints")
+                gnx_inst_on = nodes.new(type="GeometryNodeInstanceOnPoints")
 
-                    gnx_get_rotation = nodes.new(type="GeometryNodeInputNamedAttribute")
-                    gnx_get_rotation.data_type = 'FLOAT_VECTOR'
-                    gnx_get_rotation.inputs[0].default_value = settings.name_rotation
-                    
-                    gnx_get_scale = nodes.new(type="GeometryNodeInputNamedAttribute")
-                    gnx_get_scale.data_type = 'FLOAT_VECTOR'
-                    gnx_get_scale.inputs[0].default_value = settings.name_scale
-
-                    gnx_info_object = nodes.new(type="GeometryNodeObjectInfo")
-                    gnx_info_object.transform_space = 'ORIGINAL'
-                    gnx_info_object.inputs[1].default_value = True
-                    
-                    links.new(group_in.outputs[0], gnx_inst_on.inputs[0])
-                    links.new(group_in.outputs[1], gnx_info_object.inputs[0])
-                    links.new(gnx_info_object.outputs[4], gnx_inst_on.inputs[2])
-                    links.new(gnx_get_rotation.outputs[0], gnx_inst_on.inputs[5])
-                    links.new(gnx_get_scale.outputs[0], gnx_inst_on.inputs[6])
-                    links.new(gnx_inst_on.outputs[0], group_out.inputs[0])
-                    
-                    group_in.location = (-200, 0)
-                    group_out.location = (200, 0)
+                gnx_get_rotation = nodes.new(type="GeometryNodeInputNamedAttribute")
+                gnx_get_rotation.data_type = 'FLOAT_VECTOR'
+                gnx_get_rotation.inputs[0].default_value = settings.name_rotation
                 
-                modifier = _entry.object.modifiers.new(settings.name_gx_grouped, "NODES")
-                modifier.node_group = node_group
-                modifier["Socket_2"] = _entry.instance
+                gnx_get_scale = nodes.new(type="GeometryNodeInputNamedAttribute")
+                gnx_get_scale.data_type = 'FLOAT_VECTOR'
+                gnx_get_scale.inputs[0].default_value = settings.name_scale
 
-                _into.objects.link(_entry.object)
+                gnx_info_object = nodes.new(type="GeometryNodeObjectInfo")
+                gnx_info_object.transform_space = 'ORIGINAL'
+                gnx_info_object.inputs[1].default_value = True
+                
+                links.new(group_in.outputs[0], gnx_inst_on.inputs[0])
+                links.new(group_in.outputs[1], gnx_info_object.inputs[0])
+                links.new(gnx_info_object.outputs[4], gnx_inst_on.inputs[2])
+                links.new(gnx_get_rotation.outputs[0], gnx_inst_on.inputs[5])
+                links.new(gnx_get_scale.outputs[0], gnx_inst_on.inputs[6])
+                links.new(gnx_inst_on.outputs[0], group_out.inputs[0])
+                
+                group_in.location = (-200, 0)
+                group_out.location = (200, 0)
+            
+            modifier = _entry.object.modifiers.new(settings.name_gx_grouped, "NODES")
+            modifier.node_group = node_group
+            modifier["Socket_2"] = _entry.instance
+
+            _into.objects.link(_entry.object)
 
     def to_instance(self, context, settings):
         node_group = bpy.data.node_groups.get(settings.name_gx_single)
